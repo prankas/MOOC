@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Quiz{% endblock %}
+{% block body %}
+<div class="shell">
+  <header class="quiz-header">
+    <div>
+      <a class="btn btn-small btn-ghost" href="/">← Back</a>
+      <div style="margin-top:0.75rem">
+        <h1 id="qz-title" style="margin:0;font-size:1.5rem">Quiz</h1>
+        <p class="status-line" id="qz-status"></p>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost" id="qz-theme" aria-label="Toggle theme">☀</button>
+      <button type="button" class="btn" id="qz-reset">↻ Reset</button>
+    </div>
+  </header>
+
+  <div id="qz-active"></div>
+
+  <div id="qz-results" class="hidden">
+    <div class="results-summary">
+      <h2 id="rs-title">Results</h2>
+      <p id="rs-score" style="margin:0;font-size:1.1rem"></p>
+    </div>
+    <div id="rs-details"></div>
+    <div class="footer-actions">
+      <a class="btn btn-primary" href="/">Back to dashboard</a>
+    </div>
+  </div>
+
+  <div class="footer-actions" id="qz-footer">
+    <button type="button" class="btn btn-primary" id="qz-submit">Finish &amp; reveal answers</button>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/quiz.js') }}"></script>
+{% endblock %}

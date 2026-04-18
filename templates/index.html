@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Quiz — PDF{% endblock %}
+{% block body %}
+<div class="shell">
+  <header class="topbar">
+    <div class="title-block">
+      <h1 id="dash-title">PDF Quiz</h1>
+      <p>Choose a quiz mode to begin — or upload a PDF with MCQs (correct answers highlighted in yellow).</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="btn-practice" title="Practice shows instant feedback">
+        <span aria-hidden="true">✓</span>
+        <span><strong>Practice</strong><br /><small style="opacity:.85;font-weight:400">instant feedback</small></span>
+      </button>
+      <button type="button" class="btn" id="btn-reset-bank" title="Remove all uploaded PDFs from this device">Reset bank</button>
+      <button type="button" class="btn btn-ghost" id="btn-theme" aria-label="Toggle theme">☀</button>
+    </div>
+  </header>
+
+  <div class="upload-zone">
+    <div>
+      <strong>Input PDF</strong>
+      <p class="msg" style="margin:0.35rem 0 0">Upload a PDF where the correct option is marked with a <strong>yellow highlight</strong>.</p>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+      <input type="file" id="pdf-input" accept="application/pdf" />
+      <button type="button" class="btn btn-small" id="btn-example">Load example (Week 4)</button>
+    </div>
+  </div>
+  <p id="upload-msg" class="msg"></p>
+  <p id="bank-sources" class="msg" style="margin-top:0.25rem"></p>
+
+  <section class="mb-section">
+    <div class="mock-card" id="card-mock" role="button" tabindex="0">
+      <div>
+        <h2>Full Mock Test</h2>
+        <p class="mock-meta" id="mock-meta">All questions · shuffled</p>
+      </div>
+      <span class="badge" id="mock-badge">0 Q</span>
+    </div>
+  </section>
+
+  <section class="mb-section">
+    <h2 class="section-title">Quick Quiz</h2>
+    <p class="section-sub">Random questions from the entire question bank.</p>
+    <div class="grid4" id="quick-grid">
+      <div class="choice" data-n="10"><span class="n">10 Questions</span><span class="sub">Random · shuffled</span></div>
+      <div class="choice" data-n="20"><span class="n">20 Questions</span><span class="sub">Random · shuffled</span></div>
+      <div class="choice" data-n="30"><span class="n">30 Questions</span><span class="sub">Random · shuffled</span></div>
+      <div class="choice" data-n="50"><span class="n">50 Questions</span><span class="sub">Random · shuffled</span></div>
+    </div>
+  </section>
+
+  <section class="mb-section">
+    <h2 class="section-title">Week-wise Test</h2>
+    <p class="section-sub">10 questions from the week you select (when week metadata is present in the PDF).</p>
+    <div class="week-row" id="week-row"></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
