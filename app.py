@@ -5,6 +5,7 @@ Flask app: upload PDF MCQs (yellow highlight = correct), merge into one bank, pe
 from __future__ import annotations
 
 import json
+import os
 import random
 import secrets
 import threading
@@ -21,6 +22,7 @@ app.secret_key = secrets.token_hex(32)
 
 DEFAULT_BANK_ID = "default"
 _BANK_PATH = Path(__file__).resolve().parent / "data" / "bank.json"
+_DEPLOY_MARKER_PATH = Path(__file__).resolve().parent / "data" / ".deploy_marker"
 
 # bank_id -> {"questions": list[Question], "meta": dict}
 _BANKS: dict[str, dict] = {}
@@ -125,7 +127,36 @@ def _clear_bank() -> None:
                 pass
 
 
+def _maybe_reset_bank_on_new_deploy() -> None:
+    """
+    Clear persisted bank when a new deploy revision is detected.
+    This avoids stale/incorrect parsed answers surviving across releases.
+    """
+    deploy_id = (
+        os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or os.environ.get("VERCEL_GIT_COMMIT_SHA")
+    )
+    if not deploy_id:
+        return
+    _ensure_data_dir()
+    try:
+        prev = _DEPLOY_MARKER_PATH.read_text(encoding="utf-8").strip() if _DEPLOY_MARKER_PATH.is_file() else ""
+    except OSError:
+        prev = ""
+    if prev == deploy_id:
+        return
+    _clear_bank()
+    with _BANK_LOCK:
+        _QUIZ.clear()
+    try:
+        _DEPLOY_MARKER_PATH.write_text(deploy_id, encoding="utf-8")
+    except OSError:
+        pass
+
+
 load_bank_from_disk()
+_maybe_reset_bank_on_new_deploy()
 
 
 def _q_public(q: Question) -> dict[str, Any]:
