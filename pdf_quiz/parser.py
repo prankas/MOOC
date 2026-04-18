@@ -106,7 +106,8 @@ def _question_starts(doc: fitz.Document) -> list[tuple[int, int, float]]:
         for text, rect in _page_spans(page):
             m = re.match(r"^(\d+)\.\s*$", text.strip())
             if not m:
-                m = re.match(r"^(\d+)\.\s+\S", text.strip())
+                # Some source PDFs omit the space after the question marker (e.g. "8.What ...")
+                m = re.match(r"^(\d+)\.\s*\S", text.strip())
             if m:
                 out.append((int(m.group(1)), pi, rect.y0))
     out.sort(key=lambda x: (x[1], x[2]))
@@ -187,13 +188,14 @@ def parse_pdf(path: str | Path) -> tuple[list[Question], dict[str, Any]]:
     starts_meta = _question_starts(doc)
 
     # Split raw text into question blocks
-    parts = re.split(r"(?m)^(?=\s*\d+\.\s+)", raw)
+    # Accept both "8. Question" and "8.Question" styles.
+    parts = re.split(r"(?m)^(?=\s*\d+\.\s*)", raw)
     blocks: list[tuple[int, str]] = []
     for p in parts:
         p = p.strip()
         if not p:
             continue
-        m = re.match(r"^\s*(\d+)\.\s+(.*)$", p, re.DOTALL)
+        m = re.match(r"^\s*(\d+)\.\s*(.*)$", p, re.DOTALL)
         if not m:
             continue
         blocks.append((int(m.group(1)), m.group(2)))
