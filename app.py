@@ -18,7 +18,7 @@ from flask import Flask, jsonify, render_template, request
 from pdf_quiz.parser import Question, parse_pdf, parse_pdf_bytes
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
+app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 DEFAULT_BANK_ID = "default"
 _BANK_PATH = Path(__file__).resolve().parent / "data" / "bank.json"
