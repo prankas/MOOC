@@ -71,13 +71,25 @@ def _letter_from_yellow(
     options: dict[str, str],
 ) -> str | None:
     spans = _page_spans(page)
+    # First, try to match against option label spans ("A.", "B)", etc.) using
+    # geometric overlap so we do not accidentally grab the wrong nearby option.
+    label_hits: list[tuple[float, float, str]] = []
     for text, rect in spans:
-        if not _rects_intersect(rect, yr):
-            continue
         t = text.strip()
         m = _OPTION_START.match(t)
-        if m:
-            return m.group(1).upper()
+        if not m:
+            continue
+        if not _rects_intersect(rect, yr, pad=0.2):
+            continue
+        letter = m.group(1).upper()
+        inter = fitz.Rect(rect).intersect(yr)
+        overlap_area = max(0.0, inter.get_area()) if inter else 0.0
+        y_dist = abs(((rect.y0 + rect.y1) / 2) - ((yr.y0 + yr.y1) / 2))
+        label_hits.append((overlap_area, -y_dist, letter))
+    if label_hits:
+        label_hits.sort(reverse=True)
+        return label_hits[0][2]
+
     # Highlight over answer body: find longest overlapping span and match to option text
     best: tuple[int, str] | None = None
     for text, rect in spans:

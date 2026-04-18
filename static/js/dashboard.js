@@ -5,6 +5,7 @@
   var weeks = [];
   var sources = [];
   var practice = localStorage.getItem("pq-practice") === "1";
+  var uploadInFlight = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -141,12 +142,18 @@
       });
   }
 
+  function setUploadBusy(busy) {
+    uploadInFlight = !!busy;
+    $("pdf-input").disabled = uploadInFlight;
+    $("btn-example").disabled = uploadInFlight;
+    $("btn-reset-bank").disabled = uploadInFlight;
+  }
+
   function uploadFile(file) {
-    if (!file) return;
+    if (!file) return Promise.resolve({ added: 0, source: "", total: total });
     var fd = new FormData();
     fd.append("file", file);
-    setMsg($("upload-msg"), "Uploading…");
-    fetch("/api/upload", { method: "POST", body: fd })
+    return fetch("/api/upload", { method: "POST", body: fd })
       .then(function (r) {
         return r.json().then(function (j) {
           return { ok: r.ok, j: j };
@@ -156,24 +163,73 @@
         var ok = _ref2.ok;
         var j = _ref2.j;
         if (!ok) throw new Error(j.error || "Upload failed");
+        return j;
+      })
+  }
+
+  function uploadFilesSequential(files) {
+    var list = Array.prototype.slice.call(files || []).filter(function (f) {
+      return !!f;
+    });
+    if (!list.length || uploadInFlight) return;
+    setUploadBusy(true);
+    var addedTotal = 0;
+    var failed = [];
+    var p = Promise.resolve();
+    list.forEach(function (file, idx) {
+      p = p
+        .then(function () {
+          setMsg(
+            $("upload-msg"),
+            "Uploading " + (idx + 1) + "/" + list.length + ": " + file.name + "…"
+          );
+          return uploadFile(file);
+        })
+        .then(function (j) {
+          addedTotal += j.added || 0;
+        })
+        .catch(function (e) {
+          failed.push(file.name + " (" + (e.message || String(e)) + ")");
+        });
+    });
+    p.then(function () {
+      return fetchState();
+    })
+      .then(function () {
+        if (failed.length) {
+          setMsg(
+            $("upload-msg"),
+            "Added " +
+              addedTotal +
+              " questions from " +
+              (list.length - failed.length) +
+              "/" +
+              list.length +
+              " PDF(s). Failed: " +
+              failed.join("; "),
+            true
+          );
+          return;
+        }
         setMsg(
           $("upload-msg"),
           "Added " +
-            (j.added || 0) +
-            " from “" +
-            (j.source || "PDF") +
-            "”. Total in bank: " +
-            (j.total || 0) +
+            addedTotal +
+            " questions from " +
+            list.length +
+            " PDF(s). Total in bank: " +
+            total +
             "."
         );
-        return fetchState();
       })
-      .catch(function (e) {
-        setMsg($("upload-msg"), e.message || String(e), true);
+      .finally(function () {
+        setUploadBusy(false);
       });
   }
 
   function loadExample() {
+    if (uploadInFlight) return;
+    setUploadBusy(true);
     setMsg($("upload-msg"), "Loading example…");
     fetch("/api/load-example", { method: "POST" })
       .then(function (r) {
@@ -197,6 +253,9 @@
       })
       .catch(function (e) {
         setMsg($("upload-msg"), e.message || String(e), true);
+      })
+      .finally(function () {
+        setUploadBusy(false);
       });
   }
 
@@ -228,8 +287,8 @@
   $("btn-reset-bank").addEventListener("click", resetBank);
 
   $("pdf-input").addEventListener("change", function () {
-    var f = $("pdf-input").files && $("pdf-input").files[0];
-    uploadFile(f);
+    var files = $("pdf-input").files;
+    uploadFilesSequential(files);
     $("pdf-input").value = "";
   });
 

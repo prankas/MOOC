@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import random
 import secrets
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ _BANK_PATH = Path(__file__).resolve().parent / "data" / "bank.json"
 # bank_id -> {"questions": list[Question], "meta": dict}
 _BANKS: dict[str, dict] = {}
 _QUIZ: dict[str, dict] = {}
+_BANK_LOCK = threading.RLock()
 
 
 def _ensure_data_dir() -> None:
@@ -77,22 +79,24 @@ def _init_default_bank() -> None:
 
 
 def load_bank_from_disk() -> None:
-    _init_default_bank()
-    if not _BANK_PATH.is_file():
-        return
-    try:
-        data = json.loads(_BANK_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    qs = [question_from_dict(x) for x in data.get("questions", [])]
-    _BANKS[DEFAULT_BANK_ID] = {"questions": qs, "meta": _bank_meta(qs)}
+    with _BANK_LOCK:
+        _init_default_bank()
+        if not _BANK_PATH.is_file():
+            return
+        try:
+            data = json.loads(_BANK_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        qs = [question_from_dict(x) for x in data.get("questions", [])]
+        _BANKS[DEFAULT_BANK_ID] = {"questions": qs, "meta": _bank_meta(qs)}
 
 
 def save_bank_to_disk() -> None:
-    _ensure_data_dir()
-    qs = _BANKS.get(DEFAULT_BANK_ID, {}).get("questions", [])
-    payload = {"questions": [question_to_dict(q) for q in qs]}
-    _BANK_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _BANK_LOCK:
+        _ensure_data_dir()
+        qs = _BANKS.get(DEFAULT_BANK_ID, {}).get("questions", [])
+        payload = {"questions": [question_to_dict(q) for q in qs]}
+        _BANK_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _assign_uids(questions: list[Question]) -> None:
@@ -102,21 +106,23 @@ def _assign_uids(questions: list[Question]) -> None:
 
 
 def _merge_questions(new: list[Question]) -> None:
-    _init_default_bank()
-    _assign_uids(new)
-    bank = _BANKS[DEFAULT_BANK_ID]
-    bank["questions"].extend(new)
-    bank["meta"] = _bank_meta(bank["questions"])
-    save_bank_to_disk()
+    with _BANK_LOCK:
+        _init_default_bank()
+        _assign_uids(new)
+        bank = _BANKS[DEFAULT_BANK_ID]
+        bank["questions"].extend(new)
+        bank["meta"] = _bank_meta(bank["questions"])
+        save_bank_to_disk()
 
 
 def _clear_bank() -> None:
-    _BANKS[DEFAULT_BANK_ID] = {"questions": [], "meta": _bank_meta([])}
-    if _BANK_PATH.is_file():
-        try:
-            _BANK_PATH.unlink()
-        except OSError:
-            pass
+    with _BANK_LOCK:
+        _BANKS[DEFAULT_BANK_ID] = {"questions": [], "meta": _bank_meta([])}
+        if _BANK_PATH.is_file():
+            try:
+                _BANK_PATH.unlink()
+            except OSError:
+                pass
 
 
 load_bank_from_disk()
@@ -157,6 +163,7 @@ def quiz_page():
 
 @app.route("/api/state", methods=["GET"])
 def api_state():
+    load_bank_from_disk()
     _init_default_bank()
     bank = _BANKS[DEFAULT_BANK_ID]
     meta = bank["meta"]
@@ -174,11 +181,14 @@ def api_state():
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     _clear_bank()
+    with _BANK_LOCK:
+        _QUIZ.clear()
     return jsonify({"ok": True, "total": 0})
 
 
 @app.route("/api/bank/<bid>", methods=["GET"])
 def bank_detail(bid):
+    load_bank_from_disk()
     if bid != DEFAULT_BANK_ID or bid not in _BANKS:
         return jsonify({"error": "Unknown bank"}), 404
     bank = _BANKS[bid]
@@ -250,6 +260,7 @@ def load_example():
 
 @app.route("/api/start", methods=["POST"])
 def start_quiz():
+    load_bank_from_disk()
     body = request.get_json(force=True, silent=True) or {}
     bank_id = body.get("bank_id") or DEFAULT_BANK_ID
     mode = body.get("mode", "quick")
@@ -293,12 +304,13 @@ def start_quiz():
 
     sid = uuid.uuid4().hex
     public = [_q_public(q) for q in picked]
-    _QUIZ[sid] = {
-        "bank_id": bank_id,
-        "items": picked,
-        "meta": meta,
-        "mode": mode,
-    }
+    with _BANK_LOCK:
+        _QUIZ[sid] = {
+            "bank_id": bank_id,
+            "items": picked,
+            "meta": meta,
+            "mode": mode,
+        }
     return jsonify(
         {
             "session_id": sid,
@@ -317,14 +329,16 @@ def check_one():
     qid = body.get("question_id")
     letter = body.get("answer")
 
-    if not sid or sid not in _QUIZ:
+    with _BANK_LOCK:
+        session = _QUIZ.get(sid) if sid else None
+    if not session:
         return jsonify({"error": "Invalid session"}), 400
     ul = str(letter).upper().strip() if letter is not None else ""
     if ul not in ("A", "B", "C", "D"):
         return jsonify({"error": "Bad answer"}), 400
 
     qid_s = str(qid)
-    for q in _QUIZ[sid]["items"]:
+    for q in session["items"]:
         if q.uid == qid_s:
             return jsonify({"correct": ul == q.correct, "correct_letter": q.correct})
     return jsonify({"error": "Question not in session"}), 404
@@ -336,10 +350,10 @@ def submit():
     sid = body.get("session_id")
     answers = body.get("answers") or {}
 
-    if not sid or sid not in _QUIZ:
+    with _BANK_LOCK:
+        data = _QUIZ.get(sid) if sid else None
+    if not data:
         return jsonify({"error": "Invalid session"}), 400
-
-    data = _QUIZ[sid]
     items: list[Question] = data["items"]
     meta = data["meta"]
 
